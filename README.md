@@ -4,7 +4,7 @@ PoPoolation2 ([Kofler *et al.*, 2011](https://academic.oup.com/bioinformatics/ar
 
 # Repository
 
-This repository is a fork of [PoPoolation2](https://sourceforge.net/projects/popoolation2/) from SourceForge to GitHub. The original code was developed by [Robert Kofler](https://www.vetmeduni.ac.at/en/population-genetics/research/research-groups/kofler-lab/group-leader/) and ported here with his explicit permission under the [BSD 2-Clause "Simplified" License](https://github.com/lczech/popoolation2/blob/master/LICENSE.md).
+This repository is a fork of [PoPoolation2](https://sourceforge.net/projects/popoolation2/) from SourceForge to GitHub. The original code was developed by [Robert Kofler](https://www.vetmeduni.ac.at/en/population-genetics/research/research-groups/kofler-lab/group-leader/) and ported here under the [BSD 2-Clause "Simplified" License](https://github.com/lczech/popoolation2/blob/master/LICENSE.md). It can be containerized through the included dockerfile.
 
 # Usage
 
