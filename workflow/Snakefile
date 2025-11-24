@@ -1,0 +1,283 @@
+configfile: "config.yaml"
+
+# Use Apptainer/Singularity container for ALL rules
+container: "/path/to/popoolation2.sif"
+
+# ---------------------------------------------------------------------------
+# Global config & naming
+# ---------------------------------------------------------------------------
+
+REF = config["reference"]
+POPS = config["populations"]
+
+FASTQ_DIR = config.get("fastq_dir", "samples")
+
+def fastq(pop):
+    return f"{FASTQ_DIR}/{pop}.fq.gz"
+
+# Tag based on all population names
+POP_TAG  = "_".join(POPS)
+
+MPILEUP  = f"results/{POP_TAG}.mpileup"
+SYNC     = f"results/{POP_TAG}.sync"
+SYNC_J   = f"results/{POP_TAG}_java.sync"
+RC       = f"results/{POP_TAG}_rc"
+PWC      = f"results/{POP_TAG}_pwc"
+FST1     = f"results/{POP_TAG}.fst"
+FST500   = f"results/{POP_TAG}_w500.fst"
+FET      = f"results/{POP_TAG}.fet"
+IGV      = f"results/{POP_TAG}.igv"
+
+# ---------------------------------------------------------------------------
+# Rule: all
+# ---------------------------------------------------------------------------
+
+rule all:
+    input:
+        SYNC_J,
+        PWC,
+        FST1,
+        FST500,
+        FET,
+        IGV,
+        expand("map/{pop}.bam.bai", pop=POPS)
+
+# ---------------------------------------------------------------------------
+# Index reference
+# ---------------------------------------------------------------------------
+
+rule bwa_index:
+    input:
+        REF
+    output:
+        REF + ".amb"
+    shell:
+        "bwa index {input}"
+
+# ---------------------------------------------------------------------------
+# Map reads (bwa aln + samse)
+# ---------------------------------------------------------------------------
+
+rule bwa_aln:
+    input:
+        ref   = REF,
+        fastq = lambda wc: fastq(wc.pop)
+    output:
+        "map/{pop}.sai"
+    threads: config.get("bwa_threads", 8)
+    params:
+        aln_params = config.get("bwa_aln_params", "-n 0.01 -l 100 -o 1 -d 12 -e 12")
+    shell:
+        """
+        mkdir -p map
+        bwa aln {params.aln_params} -t {threads} {input.ref} {input.fastq} > {output}
+        """
+
+rule bwa_samse:
+    input:
+        ref   = REF,
+        sai   = "map/{pop}.sai",
+        fastq = lambda wc: fastq(wc.pop)
+    output:
+        "map/{pop}.sam"
+    shell:
+        """
+        bwa samse {input.ref} {input.sai} {input.fastq} > {output}
+        """
+
+# ---------------------------------------------------------------------------
+# Filter ambiguously mapped reads & sort / index BAM
+# ---------------------------------------------------------------------------
+
+rule samtools_filter_sort:
+    input:
+        "map/{pop}.sam"
+    output:
+        bam = "map/{pop}.bam",
+        bai = "map/{pop}.bam.bai"
+    shell:
+        """
+        samtools view -q 20 -bS {input} | samtools sort -o {output.bam}
+        samtools index {output.bam}
+        """
+
+# ---------------------------------------------------------------------------
+# Create mpileup from all populations
+# ---------------------------------------------------------------------------
+
+rule mpileup:
+    input:
+        bams = expand("map/{pop}.bam", pop=POPS)
+    output:
+        MPILEUP
+    shell:
+        """
+        mkdir -p results
+        samtools mpileup -B {input.bams} > {output}
+        """
+
+# ---------------------------------------------------------------------------
+# Create synchronized file (Perl version)
+# ---------------------------------------------------------------------------
+
+rule perl_mpileup2sync:
+    input:
+        MPILEUP
+    output:
+        SYNC
+    params:
+        minqual = config.get("mpileup_min_qual", 20)
+    shell:
+        """
+        mpileup2sync.pl \
+            --fastq-type sanger \
+            --min-qual {params.minqual} \
+            --input {input} \
+            --output {output}
+        """
+
+# ---------------------------------------------------------------------------
+# Create synchronized file (Java version – faster)
+# ---------------------------------------------------------------------------
+
+rule java_mpileup2sync:
+    input:
+        MPILEUP
+    output:
+        SYNC_J
+    threads: config.get("bwa_threads", 8)
+    params:
+        minqual = config.get("mpileup_min_qual", 20)
+    shell:
+        """
+        java -ea -Xmx7g -jar /opt/popoolation2/mpileup2sync.jar \
+            --input {input} \
+            --output {output} \
+            --fastq-type sanger \
+            --min-qual {params.minqual} \
+            --threads {threads}
+        """
+
+# ---------------------------------------------------------------------------
+# Allele frequency differences (snp-frequency-diff.pl)
+# ---------------------------------------------------------------------------
+
+rule snp_frequency_diff:
+    input:
+        SYNC
+    output:
+        rc  = RC,
+        pwc = PWC
+    params:
+        min_count = config.get("min_count", 6),
+        min_cov   = config.get("min_cov", 50),
+        max_cov   = config.get("max_cov", 200),
+        prefix    = f"results/{POP_TAG}"
+    shell:
+        """
+        snp-frequency-diff.pl \
+            --input {input} \
+            --output-prefix {params.prefix} \
+            --min-count {params.min_count} \
+            --min-coverage {params.min_cov} \
+            --max-coverage {params.max_cov}
+        """
+
+# ---------------------------------------------------------------------------
+# Fst per SNP (window size 1)
+# ---------------------------------------------------------------------------
+
+rule fst_snpwise:
+    input:
+        SYNC
+    output:
+        FST1
+    params:
+        min_count = config.get("min_count", 3),
+        min_cov   = config.get("min_cov", 40),
+        max_cov   = config.get("max_cov", 200),
+        pool      = config.get("pool_size", 500)
+    shell:
+        """
+        fst-sliding.pl \
+            --input {input} \
+            --output {output} \
+            --suppress-noninformative \
+            --min-count {params.min_count} \
+            --min-coverage {params.min_cov} \
+            --max-coverage {params.max_cov} \
+            --min-covered-fraction 1 \
+            --window-size 1 \
+            --step-size 1 \
+            --pool-size {params.pool}
+        """
+
+# ---------------------------------------------------------------------------
+# Fst sliding windows (e.g. 500 bp)
+# ---------------------------------------------------------------------------
+
+rule fst_windows:
+    input:
+        SYNC
+    output:
+        FST500
+    params:
+        min_count = config.get("min_count", 3),
+        min_cov   = config.get("min_cov", 40),
+        max_cov   = config.get("max_cov", 200),
+        pool      = config.get("pool_size", 500),
+        win       = 500,
+        step      = 500
+    shell:
+        """
+        fst-sliding.pl \
+            --input {input} \
+            --output {output} \
+            --min-count {params.min_count} \
+            --min-coverage {params.min_cov} \
+            --max-coverage {params.max_cov} \
+            --min-covered-fraction 1 \
+            --window-size {params.win} \
+            --step-size {params.step} \
+            --pool-size {params.pool}
+        """
+
+# ---------------------------------------------------------------------------
+# Fisher's exact test (fisher-test.pl)
+# ---------------------------------------------------------------------------
+
+rule fisher_test:
+    input:
+        SYNC
+    output:
+        FET
+    params:
+        min_count = config.get("min_count", 3),
+        min_cov   = config.get("min_cov", 40),
+        max_cov   = config.get("max_cov", 200)
+    shell:
+        """
+        fisher-test.pl \
+            --input {input} \
+            --output {output} \
+            --min-count {params.min_count} \
+            --min-coverage {params.min_cov} \
+            --max-coverage {params.max_cov} \
+            --suppress-noninformative
+        """
+
+# ---------------------------------------------------------------------------
+# Convert Fst to IGV format (pwc2igv.pl)
+# ---------------------------------------------------------------------------
+
+rule pwc2igv:
+    input:
+        FST1
+    output:
+        IGV
+    shell:
+        """
+        pwc2igv.pl \
+            --input {input} \
+            --output {output}
+        """
