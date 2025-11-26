@@ -29,5 +29,6 @@ snakemake \
     --configfile config.yaml \
     --cores 64 \
     --use-apptainer \
+    --apptainer-args "--bind $PWD:$PWD --pwd $PWD --no-home" \
     --rerun-incomplete \
     --printshellcmds

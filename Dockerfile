@@ -3,10 +3,10 @@ FROM debian:stable-slim
 LABEL maintainer="<fabian.schweitzer@biologie.uni-freiburg.de>" \
       description="Container for PoPoolation2 and pipeline dependencies for Illumina reads (Perl + R + trimmomatic + bwa + samtools + Text::NSP)"
 
-# Non-interactive apt
+
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System Perl, R, bwa, samtools, Java, toolchain + cpanminus
+# Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         perl \
@@ -18,37 +18,66 @@ RUN apt-get update && \
         bwa \
         samtools \
         r-base-core \
-        default-jre-headless \
         trimmomatic \
+        default-jdk \
         ca-certificates \
         less \
         dos2unix \
+        file \
+        bsdextrautils \
+        xxd \
         && rm -rf /var/lib/apt/lists/*
 
-# Install required Perl module for Fisher's exact test
-# This pulls in Text::NSP and the Measures::2D::Fisher::twotailed submodule.
+# Install required Perl library
 RUN cpanm --notest Text::NSP::Measures::2D::Fisher::twotailed
 
-# Put the software under /opt
-WORKDIR /opt/popoolation2
-COPY . /opt/popoolation2
+# Create directory
+RUN mkdir -p /opt/popoolation2
 
-# Workaround for possible Windows line endings in scripts on Windows git clone.
-RUN find /opt/popoolation2 -type f \( -name '*.pl' -o -name '*.pm' -o -name '*.sh' \) -exec dos2unix {} +
+# Copy Perl scripts
+COPY cmh-test.pl \
+     create-genewise-sync.pl \
+     fisher-test.pl \
+     fst-sliding.pl \
+     mpileup2sync.pl \
+     snp-frequency-diff.pl \
+     subsample-synchronized.pl \
+     synchronize-pileup.pl \
+     /opt/popoolation2/
 
-# Make all *.pl scripts executable and add aliases on PATH:
-#   "fst-sliding.pl" and "fst-sliding", etc.
-RUN chmod +x /opt/popoolation2/*.pl || true && \
+# Copy Modules directory
+COPY Modules/ /opt/popoolation2/Modules/
+
+# Copy export scripts
+COPY export/ /opt/popoolation2/export/
+
+# Copy the Java jar explicitly
+COPY mpileup2sync.jar /opt/popoolation2/mpileup2sync.jar
+
+#
+# Convert ONLY text files if downloaded on Windows.
+#
+RUN find /opt/popoolation2 -type f \
+        \( -name "*.pl" -o -name "*.pm" -o -name "*.sh" \) \
+        -exec dos2unix {} +
+
+# Make scripts executable and add both .pl and alias without .pl
+RUN chmod +x /opt/popoolation2/*.pl && \
     for f in /opt/popoolation2/*.pl; do \
-        [ -f "$f" ] || continue; \
-        bn="$(basename "$f")"; \
-        base="${bn%.pl}"; \
-        ln -s "/opt/popoolation2/$bn" "/usr/local/bin/$bn" || true; \
-        ln -s "/opt/popoolation2/$bn" "/usr/local/bin/$base" || true; \
+        base=$(basename "$f" .pl); \
+        ln -sf "/opt/popoolation2/$base.pl" "/usr/local/bin/$base"; \
+        ln -sf "/opt/popoolation2/$base.pl" "/usr/local/bin/$base.pl"; \
     done
 
-# Also keep repo itself on PATH
+# Add /opt/popoolation2 to PATH
 ENV PATH="/opt/popoolation2:${PATH}"
 
-# Default to interactive shell
+#
+# Add Java logging configuration
+#
+COPY logging.properties /opt/popoolation2/logging.properties
+
+# Enable Java logging system-wide
+ENV JAVA_TOOL_OPTIONS="-Djava.util.logging.config.file=/opt/popoolation2/logging.properties"
+
 ENTRYPOINT ["/bin/bash"]

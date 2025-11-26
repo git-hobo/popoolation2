@@ -30,6 +30,12 @@ FST500   = f"results/{POP_TAG}_w500.fst"
 FET      = f"results/{POP_TAG}.fet"
 IGV      = f"results/{POP_TAG}.igv"
 
+
+JAVA_SYNC_JAR = "/opt/popoolation2/mpileup2sync.jar" 
+JAVA_SYNC_HEAP_GB = config.get("java_sync_heap_gb", 20)
+JAVA_SYNC_THREADS = min(config.get("bwa_threads", 8), 16)
+JAVA_SYNC_MEM_MB = config.get("java_sync_mem_mb", JAVA_SYNC_HEAP_GB * 1300)
+
 # ---------------------------------------------------------------------------
 # Rule: all
 # ---------------------------------------------------------------------------
@@ -91,7 +97,7 @@ rule bwa_index:
     input:
         REF
     output:
-        REF + ".amb"
+        REF + ".bwt"
     shell:
         "bwa index {input}"
 
@@ -105,8 +111,9 @@ rule bwa_mem_pe:
     """
     input:
         ref = REF,
+        idx = REF + ".bwt",
         r1  = lambda wc: f"trimmed/{wc.sample}_1_paired.fq.gz",
-        r2  = lambda wc: f"trimmed/{wc.sample}_1_paired.fq.gz"
+        r2  = lambda wc: f"trimmed/{wc.sample}_2_paired.fq.gz"
     output:
         bam = "map/{sample}.bam",
         bai = "map/{sample}.bam.bai"
@@ -117,7 +124,6 @@ rule bwa_mem_pe:
         r"""
         mkdir -p map
         bwa mem {params.mem_params} -t {threads} {input.ref} {input.r1} {input.r2} \
-          | samtools view -bS - \
           | samtools sort -o {output.bam} -
         samtools index {output.bam}
         """
@@ -162,21 +168,34 @@ rule perl_mpileup2sync:
 # ---------------------------------------------------------------------------
 
 rule java_mpileup2sync:
+    """
+    Convert mpileup to synchronized file using the Java mpileup2sync.jar.
+    Uses SYNC_J as the canonical sync file.
+    """
     input:
         MPILEUP
     output:
         SYNC_J
-    threads: config.get("bwa_threads", 8)
+    threads:
+        JAVA_SYNC_THREADS
     params:
-        minqual = config.get("mpileup_min_qual", 20)
+        minqual = config.get("mpileup_min_qual", 20),
+        jar     = JAVA_SYNC_JAR,
+        heap_gb = JAVA_SYNC_HEAP_GB
+    resources:
+        mem_mb = JAVA_SYNC_MEM_MB
+    log:
+        f"logs/java_mpileup2sync_{POP_TAG}.log"
     shell:
-        """
-        java -ea -Xmx7g -jar /opt/popoolation2/mpileup2sync.jar \
-            --input {input} \
-            --output {output} \
+        r"""
+        mkdir -p logs
+        java -ea -Xmx{params.heap_gb}g -jar {params.jar} \
+            --input $PWD/{input} \
+            --output $PWD/{output} \
             --fastq-type sanger \
             --min-qual {params.minqual} \
-            --threads {threads}
+            --threads {threads} \
+        &> {log}
         """
 
 # ---------------------------------------------------------------------------
