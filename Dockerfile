@@ -1,7 +1,7 @@
 FROM debian:stable-slim
 
 LABEL maintainer="<fabian.schweitzer@biologie.uni-freiburg.de>" \
-      description="Container for PoPoolation2 and pipeline dependencies (Perl + R + bwa + samtools + Text::NSP)"
+      description="Container for PoPoolation2 and pipeline dependencies for Illumina reads (Perl + R + trimmomatic + bwa + samtools + Text::NSP)"
 
 # Non-interactive apt
 ENV DEBIAN_FRONTEND=noninteractive
@@ -19,6 +19,7 @@ RUN apt-get update && \
         samtools \
         r-base-core \
         default-jre-headless \
+        trimmomatic \
         ca-certificates \
         less \
         dos2unix \

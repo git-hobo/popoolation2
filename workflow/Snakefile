@@ -1,7 +1,11 @@
+# Use Apptainer for ALL rules
+import os
+IMG = os.environ.get("IMG", "")
 configfile: "config.yaml"
 
-# Use Apptainer/Singularity container for ALL rules
-container: "/path/to/popoolation2.sif"
+# Use Apptainer container for ALL rules
+container: f"{IMG}/popoolation2.sif"
+
 
 # ---------------------------------------------------------------------------
 # Global config & naming
@@ -12,10 +16,26 @@ POPS = config["populations"]
 
 FASTQ_DIR = config.get("fastq_dir", "samples")
 
-def fastq(pop):
-    return f"{FASTQ_DIR}/{pop}.fq.gz"
+def raw_r1(pop):
+    return f"{FASTQ_DIR}/{pop}_1.fq.gz"
 
-# Tag based on all population names
+def raw_r2(pop):
+    return f"{FASTQ_DIR}/{pop}_2.fq.gz"
+
+def trimmed_r1_paired(pop):
+    return f"trimmed/{pop}_1_paired.fq.gz"
+
+def trimmed_r2_paired(pop):
+    return f"trimmed/{pop}_2_paired.fq.gz"
+
+def trimmed_r1_unpaired(pop):
+    return f"trimmed/{pop}_1_unpaired.fq.gz"
+
+def trimmed_r2_unpaired(pop):
+    return f"trimmed/{pop}_2_unpaired.fq.gz"
+
+
+# Tag based on all population names, e.g. "pop1_pop2" or "FR1_FR2_FR3"
 POP_TAG  = "_".join(POPS)
 
 MPILEUP  = f"results/{POP_TAG}.mpileup"
@@ -40,10 +60,49 @@ rule all:
         FST500,
         FET,
         IGV,
+        # trimmed reads for all populations
+        expand(trimmed_r1_paired,   pop=POPS),
+        expand(trimmed_r2_paired,   pop=POPS),
+        expand(trimmed_r1_unpaired, pop=POPS),
+        expand(trimmed_r2_unpaired, pop=POPS),
+        # mapped & indexed BAMs (from trimmed PE reads)
         expand("map/{pop}.bam.bai", pop=POPS)
 
 # ---------------------------------------------------------------------------
-# Index reference
+# Trimmomatic PE trimming (from raw R1+R2 to trimmed PE+SE)
+# ---------------------------------------------------------------------------
+
+rule trimmomatic_pe:
+    """
+    Trim adapters & low-quality bases using Trimmomatic (paired-end).
+    Uses TruSeq3-PE adapters from Debian's trimmomatic package by default.
+    """
+    input:
+        r1 = lambda wc: raw_r1(wc.pop),
+        r2 = lambda wc: raw_r2(wc.pop)
+    output:
+        r1_paired   = lambda wc: trimmed_r1_paired(wc.pop),
+        r1_unpaired = lambda wc: trimmed_r1_unpaired(wc.pop),
+        r2_paired   = lambda wc: trimmed_r2_paired(wc.pop),
+        r2_unpaired = lambda wc: trimmed_r2_unpaired(wc.pop)
+    threads: config.get("bwa_threads", 8)
+    params:
+        adapters = "/usr/share/trimmomatic/TruSeq3-PE.fa",
+        extra    = "LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36"
+    shell:
+        r"""
+        mkdir -p trimmed
+        TrimmomaticPE \
+            -threads {threads} \
+            {input.r1} {input.r2} \
+            {output.r1_paired} {output.r1_unpaired} \
+            {output.r2_paired} {output.r2_unpaired} \
+            ILLUMINACLIP:{params.adapters}:2:30:10 \
+            {params.extra}
+        """
+
+# ---------------------------------------------------------------------------
+# Index reference for bwa mem
 # ---------------------------------------------------------------------------
 
 rule bwa_index:
@@ -55,49 +114,29 @@ rule bwa_index:
         "bwa index {input}"
 
 # ---------------------------------------------------------------------------
-# Map reads (bwa aln + samse)
+# Paired-end mapping with bwa mem + sort/index BAM
 # ---------------------------------------------------------------------------
 
-rule bwa_aln:
+rule bwa_mem_pe:
+    """
+    Map trimmed paired-end reads with bwa mem, then sort & index BAM.
+    """
     input:
-        ref   = REF,
-        fastq = lambda wc: fastq(wc.pop)
-    output:
-        "map/{pop}.sai"
-    threads: config.get("bwa_threads", 8)
-    params:
-        aln_params = config.get("bwa_aln_params", "-n 0.01 -l 100 -o 1 -d 12 -e 12")
-    shell:
-        """
-        mkdir -p map
-        bwa aln {params.aln_params} -t {threads} {input.ref} {input.fastq} > {output}
-        """
-
-rule bwa_samse:
-    input:
-        ref   = REF,
-        sai   = "map/{pop}.sai",
-        fastq = lambda wc: fastq(wc.pop)
-    output:
-        "map/{pop}.sam"
-    shell:
-        """
-        bwa samse {input.ref} {input.sai} {input.fastq} > {output}
-        """
-
-# ---------------------------------------------------------------------------
-# Filter ambiguously mapped reads & sort / index BAM
-# ---------------------------------------------------------------------------
-
-rule samtools_filter_sort:
-    input:
-        "map/{pop}.sam"
+        ref = REF,
+        r1  = lambda wc: trimmed_r1_paired(wc.pop),
+        r2  = lambda wc: trimmed_r2_paired(wc.pop)
     output:
         bam = "map/{pop}.bam",
         bai = "map/{pop}.bam.bai"
+    threads: config.get("bwa_threads", 8)
+    params:
+        mem_params = config.get("bwa_mem_params", "")
     shell:
-        """
-        samtools view -q 20 -bS {input} | samtools sort -o {output.bam}
+        r"""
+        mkdir -p map
+        bwa mem {params.mem_params} -t {threads} {input.ref} {input.r1} {input.r2} \
+          | samtools view -bS - \
+          | samtools sort -o {output.bam} -
         samtools index {output.bam}
         """
 
@@ -164,7 +203,7 @@ rule java_mpileup2sync:
 
 rule snp_frequency_diff:
     input:
-        SYNC
+        SYNC_J
     output:
         rc  = RC,
         pwc = PWC
@@ -189,7 +228,7 @@ rule snp_frequency_diff:
 
 rule fst_snpwise:
     input:
-        SYNC
+        SYNC_J
     output:
         FST1
     params:
@@ -218,7 +257,7 @@ rule fst_snpwise:
 
 rule fst_windows:
     input:
-        SYNC
+        SYNC_J
     output:
         FST500
     params:
@@ -248,7 +287,7 @@ rule fst_windows:
 
 rule fisher_test:
     input:
-        SYNC
+        SYNC_J
     output:
         FET
     params:

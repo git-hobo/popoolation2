@@ -1,13 +1,13 @@
-reference: "ref/2R.chr"
+reference: "ref/GCF_001465965.1_Pdom_r1.2_genomic.fna"
 
 populations:
-  - pop1
-  - pop2
+  - AAA9495
+  - AAB7105
 
 fastq_dir: "samples"
 
 # mapping parameters
-bwa_threads: 8
+bwa_threads: 64
 bwa_aln_params: "-n 0.01 -l 100 -o 1 -d 12 -e 12"
 
 # mpileup options
