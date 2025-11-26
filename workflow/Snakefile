@@ -16,24 +16,6 @@ POPS = config["populations"]
 
 FASTQ_DIR = config.get("fastq_dir", "samples")
 
-def raw_r1(pop):
-    return f"{FASTQ_DIR}/{pop}_1.fq.gz"
-
-def raw_r2(pop):
-    return f"{FASTQ_DIR}/{pop}_2.fq.gz"
-
-def trimmed_r1_paired(pop):
-    return f"trimmed/{pop}_1_paired.fq.gz"
-
-def trimmed_r2_paired(pop):
-    return f"trimmed/{pop}_2_paired.fq.gz"
-
-def trimmed_r1_unpaired(pop):
-    return f"trimmed/{pop}_1_unpaired.fq.gz"
-
-def trimmed_r2_unpaired(pop):
-    return f"trimmed/{pop}_2_unpaired.fq.gz"
-
 
 # Tag based on all population names, e.g. "pop1_pop2" or "FR1_FR2_FR3"
 POP_TAG  = "_".join(POPS)
@@ -61,12 +43,12 @@ rule all:
         FET,
         IGV,
         # trimmed reads for all populations
-        expand(trimmed_r1_paired,   pop=POPS),
-        expand(trimmed_r2_paired,   pop=POPS),
-        expand(trimmed_r1_unpaired, pop=POPS),
-        expand(trimmed_r2_unpaired, pop=POPS),
+        expand("trimmed/{sample}_1_paired.fq.gz",   sample=POPS),
+        expand("trimmed/{sample}_2_paired.fq.gz",   sample=POPS),
+        expand("trimmed/{sample}_1_unpaired.fq.gz", sample=POPS),
+        expand("trimmed/{sample}_2_unpaired.fq.gz", sample=POPS),
         # mapped & indexed BAMs (from trimmed PE reads)
-        expand("map/{pop}.bam.bai", pop=POPS)
+        expand("map/{sample}.bam.bai", sample=POPS)
 
 # ---------------------------------------------------------------------------
 # Trimmomatic PE trimming (from raw R1+R2 to trimmed PE+SE)
@@ -78,13 +60,13 @@ rule trimmomatic_pe:
     Uses TruSeq3-PE adapters from Debian's trimmomatic package by default.
     """
     input:
-        r1 = lambda wc: raw_r1(wc.pop),
-        r2 = lambda wc: raw_r2(wc.pop)
+        r1 = lambda wc: f"{FASTQ_DIR}/{wc.sample}_1.fq.gz",
+        r2 = lambda wc: f"{FASTQ_DIR}/{wc.sample}_2.fq.gz"
     output:
-        r1_paired   = lambda wc: trimmed_r1_paired(wc.pop),
-        r1_unpaired = lambda wc: trimmed_r1_unpaired(wc.pop),
-        r2_paired   = lambda wc: trimmed_r2_paired(wc.pop),
-        r2_unpaired = lambda wc: trimmed_r2_unpaired(wc.pop)
+        r1_paired   = "trimmed/{sample}_1_paired.fq.gz",
+        r1_unpaired = "trimmed/{sample}_1_unpaired.fq.gz",
+        r2_paired   = "trimmed/{sample}_2_paired.fq.gz",
+        r2_unpaired = "trimmed/{sample}_2_unpaired.fq.gz"
     threads: config.get("bwa_threads", 8)
     params:
         adapters = "/usr/share/trimmomatic/TruSeq3-PE.fa",
@@ -123,11 +105,11 @@ rule bwa_mem_pe:
     """
     input:
         ref = REF,
-        r1  = lambda wc: trimmed_r1_paired(wc.pop),
-        r2  = lambda wc: trimmed_r2_paired(wc.pop)
+        r1  = lambda wc: f"trimmed/{wc.sample}_1_paired.fq.gz",
+        r2  = lambda wc: f"trimmed/{wc.sample}_1_paired.fq.gz"
     output:
-        bam = "map/{pop}.bam",
-        bai = "map/{pop}.bam.bai"
+        bam = "map/{sample}.bam",
+        bai = "map/{sample}.bam.bai"
     threads: config.get("bwa_threads", 8)
     params:
         mem_params = config.get("bwa_mem_params", "")
@@ -146,7 +128,7 @@ rule bwa_mem_pe:
 
 rule mpileup:
     input:
-        bams = expand("map/{pop}.bam", pop=POPS)
+        bams = expand("map/{sample}.bam", sample=POPS)
     output:
         MPILEUP
     shell:
