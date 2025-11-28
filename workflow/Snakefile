@@ -188,6 +188,10 @@ rule java_mpileup2sync:
         f"logs/java_mpileup2sync_{POP_TAG}.log"
     shell:
         r"""
+        set -euxo pipefail
+        echo "DEBUG: PWD inside container is: $PWD"
+        echo "DEBUG: contents of results/"
+        ls -l results || echo "results/ does not exist"
         mkdir -p logs
         java -ea -Xmx{params.heap_gb}g -jar {params.jar} \
             --input $PWD/{input} \
