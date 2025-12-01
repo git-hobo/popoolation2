@@ -171,6 +171,9 @@ rule java_mpileup2sync:
     """
     Convert mpileup to synchronized file using the Java mpileup2sync.jar.
     Uses SYNC_J as the canonical sync file.
+
+    NOTE: mpileup2sync.jar is broken in that it *always* exits with code 1,
+    even when producing a valid .sync. Simple output checks are performed instead.
     """
     input:
         MPILEUP
@@ -189,18 +192,61 @@ rule java_mpileup2sync:
     shell:
         r"""
         set -euxo pipefail
-        echo "DEBUG: PWD inside container is: $PWD"
-        echo "DEBUG: contents of results/"
-        ls -l results || echo "results/ does not exist"
+
+        echo "DEBUG: PWD inside container is: $PWD" >&2
+        echo "DEBUG: input file:" >&2
+        ls -lh {input} >&2
+
         mkdir -p logs
+
+        # ---- run Java but DO NOT let set -e kill the shell on exit 1 ----
+        set +e
         java -ea -Xmx{params.heap_gb}g -jar {params.jar} \
-            --input $PWD/{input} \
-            --output $PWD/{output} \
+            --input "$PWD/{input}" \
+            --output "$PWD/{output}" \
             --fastq-type sanger \
             --min-qual {params.minqual} \
             --threads {threads} \
-        &> {log}
+        2>&1 | tee {log}
+        status=$?
+        set -e
+        echo "DEBUG: mpileup2sync raw exit code: $status" >&2
+
+        # ---- sanity checks on the output ----
+
+        # 1) Must exist and be non-empty
+        if [[ ! -s "{output}" ]]; then
+            echo "ERROR: {output} does not exist or is empty; treating as real failure." >&2
+            exit 1
+        fi
+
+        # 2) Very basic structural check: at least 5 fields, and sample columns look like a:b:c:d:e:f
+        # ASSUMES TWO SAMPLES
+        bad_lines=$(
+        awk '
+            NF < 5 {{ print; next }}
+            !($4 ~ /^[0-9]+(:[0-9]+){{5}}$/ && $5 ~ /^[0-9]+(:[0-9]+){{5}}$/) {{ print }}
+        ' "{output}" | head -n 1
+        )
+        if [[ -n "$bad_lines" ]]; then
+            echo "ERROR: {output} contains at least one structurally invalid line:" >&2
+            echo "$bad_lines" >&2
+            exit 1
+        fi
+
+        # ---- decide what to report to Snakemake ----
+
+        if [[ "$status" -eq 1 ]]; then
+            # We know the jar always exits 1, even on success.
+            # Since our own checks passed, we treat this as success.
+            echo "WARNING: mpileup2sync exited with code 1, but output {output} looks valid; treating as success." >&2
+            exit 0
+        else
+            # If it ever uses other exit codes in the future, propagate them.
+            exit "$status"
+        fi
         """
+
 
 # ---------------------------------------------------------------------------
 # Allele frequency differences (snp-frequency-diff.pl)
@@ -208,7 +254,7 @@ rule java_mpileup2sync:
 
 rule snp_frequency_diff:
     input:
-        SYNC_J
+        SYNC
     output:
         rc  = RC,
         pwc = PWC
