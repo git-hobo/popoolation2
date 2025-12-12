@@ -15,6 +15,6 @@ mpileup_min_qual: 20
 
 # popoolation2 parameters
 min_count: 3
-min_cov: 30
+min_cov: 40
 max_cov: 200
-pool_size: 100
+pool_size: 54

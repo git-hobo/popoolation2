@@ -34,7 +34,7 @@ RUN cpanm --notest Text::NSP::Measures::2D::Fisher::twotailed
 # Create directory
 RUN mkdir -p /opt/popoolation2
 
-# Copy Perl scripts
+# Copy Perl scripts from root and subdirectories
 COPY cmh-test.pl \
      create-genewise-sync.pl \
      fisher-test.pl \
@@ -43,6 +43,13 @@ COPY cmh-test.pl \
      snp-frequency-diff.pl \
      subsample-synchronized.pl \
      synchronize-pileup.pl \
+     export/cmh2gwas.pl \
+     export/compute-max-coverage.pl \
+     export/pwc2igv.pl \
+     export/subsample_sync2GenePop.pl \
+     export/subsample_sync2fasta.pl \
+     indel_filtering/filter-sync-by-gtf.pl \
+     indel_filtering/identify-indel-regions.pl \
      /opt/popoolation2/
 
 # Copy Modules directory
