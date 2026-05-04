@@ -12,7 +12,7 @@ source ${HOME}/.bashrc
 source ${HOME}/miniconda3/etc/profile.d/conda.sh
 conda activate snakemake
 
-REF="GCF_001465965.1_Pdom_r1.2_genomic.fna"
+REF="pdMgs03.fa"
 POOL_A="AAA9495_?.fq.gz"
 POOL_B="AAB7105_?.fq.gz"
 
