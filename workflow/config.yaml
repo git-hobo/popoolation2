@@ -1,4 +1,4 @@
-reference: "ref/GCF_001465965.1_Pdom_r1.2_genomic.fna"
+reference: "ref/pdMgs03.fa"
 
 populations:
   - AAA9495
