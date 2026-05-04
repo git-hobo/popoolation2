@@ -1,8 +1,13 @@
 FROM debian:stable-slim
 
-LABEL maintainer="<fabian.schweitzer@biologie.uni-freiburg.de>" \
-      description="Container for PoPoolation2 and pipeline dependencies for Illumina reads (Perl + R + trimmomatic + bwa + samtools + Text::NSP)"
-
+LABEL org.opencontainers.image.title="Popoolation2 analysis container"
+LABEL org.opencontainers.image.description="Containerized Popoolation2 environment used for Pool-Seq. analysis in the Polistes cryptic species project"
+LABEL org.opencontainers.image.authors="Fabian Schweitzer <fabian.schweitzer@biologie.uni-freiburg.de>"
+LABEL org.opencontainers.image.source="https://github.com/git-hobo/popoolation2"
+LABEL org.opencontainers.image.version="1.0.0"
+LABEL org.opencontainers.image.revision="GIT_COMMIT_SHA"
+LABEL org.opencontainers.image.created="2026-05-04"
+LABEL org.opencontainers.image.licenses="BSD 2-Clause"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
