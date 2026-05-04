@@ -4,7 +4,7 @@ LABEL org.opencontainers.image.title="Popoolation2 analysis container"
 LABEL org.opencontainers.image.description="Containerized Popoolation2 environment used for Pool-Seq. analysis in the Polistes cryptic species project"
 LABEL org.opencontainers.image.authors="Fabian Schweitzer <fabian.schweitzer@biologie.uni-freiburg.de>"
 LABEL org.opencontainers.image.source="https://github.com/git-hobo/popoolation2"
-LABEL org.opencontainers.image.version="1.0.0"
+LABEL org.opencontainers.image.version="1.0.1"
 LABEL org.opencontainers.image.revision="GIT_COMMIT_SHA"
 LABEL org.opencontainers.image.created="2026-05-04"
 LABEL org.opencontainers.image.licenses="BSD 2-Clause"
@@ -92,4 +92,4 @@ COPY logging.properties /opt/popoolation2/logging.properties
 # Enable Java logging system-wide
 ENV JAVA_TOOL_OPTIONS="-Djava.util.logging.config.file=/opt/popoolation2/logging.properties"
 
-ENTRYPOINT ["/bin/bash"]
+CMD ["/bin/bash"]
