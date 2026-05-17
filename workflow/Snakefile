@@ -4,7 +4,7 @@ IMG = os.environ.get("IMG", "")
 configfile: "config.yaml"
 
 # Use Apptainer container for ALL rules
-container: f"{IMG}/popoolation2.sif"
+container: f"{IMG}/popoolation2_v1.0.0.sif"
 
 
 # ---------------------------------------------------------------------------
